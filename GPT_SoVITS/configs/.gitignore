@@ -1,0 +1,12 @@
+# 用户自建的训练/推理配置不纳入版本库
+*.yaml
+
+# 但仓库自带的出厂配置必须跟踪（否则新克隆缺少 s1*/train/tts_infer，训练页与 CLI 直接报错）
+!s1.yaml
+!s1big.yaml
+!s1big2.yaml
+!s1longer.yaml
+!s1longer-v2.yaml
+!s1mq.yaml
+!train.yaml
+!tts_infer.yaml
