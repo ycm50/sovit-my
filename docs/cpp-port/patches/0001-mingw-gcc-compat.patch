@@ -1,0 +1,608 @@
+# MinGW / GCC compatibility patch for GPT-SoVITS-cpp
+# base: GPT-SoVITS-Devel/GPT-SoVITS-cpp @ 384a2f995c48ef1903373ac8814569a8925779ba
+#       子模块 tokenizers-cpp @ e450f252 / sentencepiece @ 9bf2a063 / cld2-cmake @ 0d8b95d7 / cmake-scripts @ 14636e21
+# 应用: cd GPT-SoVITS-cpp && git apply --check <本文件> && git apply <本文件>
+# 说明: 覆盖主仓库 + 4 个子模块内的 18 个文件（子模块需先 checkout）
+
+--- a/include/GPTSoVITS/model/backend/backend_config.h
++++ b/include/GPTSoVITS/model/backend/backend_config.h
+@@ -19,9 +19,8 @@
+ #ifdef WITH_ONNX
+   kONNX = 1,  // ONNX Runtime
+ #endif
+-#ifdef WITH_TENSORRT
++  // [本地补丁] 保留占位枚举，供未启用 TensorRT 时的分支判断使用
+   kTensorRT = 2,  // TensorRT
+-#endif
+   kAuto = 3,  // 自动选择：CUDA 设备优先 TRT，否则 ONNX
+ };
+ 
+--- a/src/Core/ModelPool.cpp
++++ b/src/Core/ModelPool.cpp
+@@ -201,66 +201,90 @@
+       case ModelType::kBert: {
+         auto model = std::make_shared<CNBertModel>();
+         auto tok = (GetGlobalResourcesPath() / "bert_tokenizer.json").string();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, tok, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, tok, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, tok, config.device, config.thread_num);
+         return model;
+       }
+       case ModelType::kSSL: {
+         auto model = std::make_shared<SSLModel>();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
+         return model;
+       }
+       case ModelType::kVQ: {
+         auto model = std::make_shared<VQModel>();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
+         return model;
+       }
+       case ModelType::kSpectrogram: {
+         auto model = std::make_shared<SpectrogramModel>();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
+         return model;
+       }
+       case ModelType::kSVEmbedding: {
+         auto model = std::make_shared<SVEmbeddingModel>();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
+         return model;
+       }
+       case ModelType::kGPTEncoder: {
+         auto model = std::make_shared<GPTEncoderModel>();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
+         return model;
+       }
+       case ModelType::kGPTStep: {
+         auto model = std::make_shared<GPTStepModel>();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
+         return model;
+       }
+       case ModelType::kSoVITS: {
+         auto model = std::make_shared<SoVITSModel>();
+-        if (backend == BackendType::kTensorRT)
++        #ifdef WITH_TENSORRT
++        if (backend == BackendType::kTensorRT) {
+           model->Init<TensorRTBackend>(config.path, backend_cfg);
+-        else
+-          model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
++          return model;
++        }
++#endif
++        model->Init<ONNXBackend>(config.path, config.device, config.thread_num);
+         return model;
+       }
+       default:
+--- a/src/InferencePipeline.cpp
++++ b/src/InferencePipeline.cpp
+@@ -191,18 +191,25 @@
+     auto bert_engine_path = std::filesystem::path(config.model_path) / "bert.engine";
+     auto tokenizer_path   = resources_path / "bert_tokenizer.json";
+     // TRT backend 优先找 .engine，再找 .onnx
++#ifdef WITH_TENSORRT
+     bool use_trt = config.backend == Model::BackendType::kTensorRT;
++#else
++    bool use_trt = false;
++#endif
+     auto bert_path = (use_trt && std::filesystem::exists(bert_engine_path))
+                          ? bert_engine_path
+                          : bert_onnx_path;
+     if (std::filesystem::exists(bert_path)) {
++#ifdef WITH_TENSORRT
+       if (use_trt) {
+         Model::BackendConfig bert_cfg;
+         bert_cfg.device = device_ctx->GetDevice();
+         bert_cfg.engine_cache_dir = config.engine_cache_dir;
+         bert_model->Init<Model::TensorRTBackend>(
+             bert_path.string(), tokenizer_path.string(), bert_cfg);
+-      } else {
++      } else
++#endif
++      {
+         bert_model->Init<Model::ONNXBackend>(
+             bert_onnx_path.string(), tokenizer_path.string(), device_ctx->GetDevice());
+       }
+--- a/src/model/backend/tensorrt_backend.cpp
++++ b/src/model/backend/tensorrt_backend.cpp
+@@ -790,86 +790,11 @@
+ 
+ }  // namespace GPTSoVITS::Model
+ 
+-#else  // !WITH_TENSORRT
+-
+-// ============ 无 TRT 编译时的存根 ============
+-
+-namespace GPTSoVITS::Model {
+-
+-struct TensorRTBackend::Impl {};  // 空 Impl，满足 unique_ptr 析构
+-
+-TensorRTBackend::TensorRTBackend()  : impl_(std::make_unique<Impl>()) {}
+-TensorRTBackend::~TensorRTBackend() = default;
+-
+-bool TensorRTBackend::Load(const std::string&, const Device&, int) {
+-  PrintError("[TRTBackend] Not compiled with TensorRT support");
+-  return false;
+-}
+-bool TensorRTBackend::Load(const std::string&, const BackendConfig&) {
+-  PrintError("[TRTBackend] Not compiled with TensorRT support");
+-  return false;
+-}
+-bool TensorRTBackend::Load(const std::string&, const TensorRTConfig&) {
+-  PrintError("[TRTBackend] Not compiled with TensorRT support");
+-  return false;
+-}
+-void TensorRTBackend::Forward(const std::unordered_map<std::string, Tensor*>&,
+-                               std::unordered_map<std::string, std::unique_ptr<Tensor>>&) {
+-  THROW_ERROR("[TRTBackend] Not compiled with TensorRT support");
+-}
+-void TensorRTBackend::Forward(const std::unordered_map<std::string, Tensor*>&,
+-                               std::vector<std::unique_ptr<Tensor>>&) {
+-  THROW_ERROR("[TRTBackend] Not compiled with TensorRT support");
+-}
+-bool TensorRTBackend::ForwardWithPreallocatedOutput(
+-    const std::unordered_map<std::string, Tensor*>&,
+-    std::unordered_map<std::string, Tensor*>&) {
+-  PrintError("[TRTBackend] Not compiled with TensorRT support");
+-  return false;
+-}
+-const std::vector<std::string>& TensorRTBackend::GetInputNames() const {
+-  static std::vector<std::string> empty;
+-  return empty;
+-}
+-const std::vector<std::string>& TensorRTBackend::GetOutputNames() const {
+-  static std::vector<std::string> empty;
+-  return empty;
+-}
+-DataType TensorRTBackend::GetInputDataType(const std::string&) const {
+-  return DataType::kFloat32;
+-}
+-DataType TensorRTBackend::GetOutputDataType(const std::string&) const {
+-  return DataType::kFloat32;
+-}
+-bool TensorRTBackend::BuildFromONNX(const std::string&, const TensorRTConfig&) { return false; }
+-bool TensorRTBackend::LoadEngine(const std::string&) { return false; }
+-bool TensorRTBackend::SaveEngine(const std::string&) { return false; }
+-void TensorRTBackend::CollectIOMetadata() {}
+-DataType TensorRTBackend::DetermineInputType(DataType t) const { return t; }
+-bool TensorRTBackend::InferCore(const std::unordered_map<std::string, Tensor*>&,
+-                                 const std::unordered_map<std::string, Tensor*>&) { return false; }
+-
+-std::unique_ptr<BaseModel> BackendFactory::CreateBackend(BackendType type) {
+-  if (type == BackendType::kONNX) {
+-    PrintWarn("[BackendFactory] Use ONNXBackend directly in model Init<>");
+-  } else {
+-    PrintWarn("[BackendFactory] Backend not available");
+-  }
+-  return nullptr;
+-}
+-bool BackendFactory::IsBackendAvailable(BackendType type) {
+-  return type == BackendType::kONNX;
+-}
+-std::vector<BackendType> BackendFactory::GetAvailableBackends() {
+-  return {BackendType::kONNX};
+-}
+-
+-}  // namespace GPTSoVITS::Model
+-
+ #endif  // WITH_TENSORRT
+ 
+ 
+ 
++
+ 
+ 
+ 
+--- a/include/GPTSoVITS/Utils/Precision.h
++++ b/include/GPTSoVITS/Utils/Precision.h
+@@ -1,3 +1,4 @@
++#include <cmath>
+ //
+ // Created by 19254 on 2026/2/22.
+ //
+--- a/include/GPTSoVITS/model/spectrogram.h
++++ b/include/GPTSoVITS/model/spectrogram.h
+@@ -10,6 +10,7 @@
+ #include "GPTSoVITS/model/base.h"
+ #include "GPTSoVITS/model/tensor.h"
+ #include "GPTSoVITS/model/backend/backend_config.h"
++#include "GPTSoVITS/Utils/exception.h"
+ 
+ namespace GPTSoVITS {
+ class AudioTools;
+--- a/src/model/sovits.cpp
++++ b/src/model/sovits.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "GPTSoVITS/model/sovits.h"
++#include <algorithm>
+ 
+ #ifdef WITH_CUDA
+ #include <cuda_runtime_api.h>
+--- a/src/g2p/g2p_en.cpp
++++ b/src/g2p/g2p_en.cpp
+@@ -33,7 +33,7 @@
+ void init_en_cmu() {
+   auto fpath = g_globalResourcesPath / "g2p" / "en" / "engdict_cache_pickle.json";
+   #ifdef _HOST_WINDOWS_
+-  std::ifstream file(fpath.wstring());
++  std::ifstream file(fpath);
+   #else
+   std::ifstream file(fpath);
+   #endif
+@@ -49,7 +49,7 @@
+ void init_en_namedict() {
+   auto fpath = g_globalResourcesPath / "g2p" / "en" / "namedict_en.json";
+   #ifdef _HOST_WINDOWS_
+-  std::ifstream file(fpath.wstring());
++  std::ifstream file(fpath);
+   #else
+   std::ifstream file(fpath);
+   #endif
+@@ -65,7 +65,7 @@
+ void init_en_homograph2features() {
+   auto fpath = g_globalResourcesPath / "g2p" / "en" / "homograph2features_en.json";
+   #ifdef _HOST_WINDOWS_
+-  std::ifstream file(fpath.wstring());
++  std::ifstream file(fpath);
+   #else
+   std::ifstream file(fpath);
+   #endif
+@@ -85,7 +85,7 @@
+ void init_en_pos_cache() {
+   auto fpath = g_globalResourcesPath / "g2p" / "en" / "en_pos_tagger.txt";
+   #ifdef _HOST_WINDOWS_
+-  std::ifstream file(fpath.wstring());
++  std::ifstream file(fpath);
+   #else
+   std::ifstream file(fpath);
+   #endif
+--- a/src/g2p/polyphonic.cpp
++++ b/src/g2p/polyphonic.cpp
+@@ -17,7 +17,7 @@
+   if (polyphonic_data.empty()) {
+     auto path = g_globalResourcesPath / "polyphonic.data";
+     #ifdef _HOST_WINDOWS_
+-    std::ifstream file(path.wstring());
++    std::ifstream file(path);
+     #else
+     std::ifstream file(path);
+     #endif
+--- a/src/text/LangDetect.cpp
++++ b/src/text/LangDetect.cpp
+@@ -279,7 +279,7 @@
+   }
+   
+   #ifdef _HOST_WINDOWS_
+-  std::ifstream file(tp.wstring());
++  std::ifstream file(tp);
+   #else
+   std::ifstream file(tp);
+   #endif
+--- a/example/onnx/cloud_create_speaker.cpp
++++ b/example/onnx/cloud_create_speaker.cpp
+@@ -8,17 +8,20 @@
+ 
+ #include <iostream>
+ #include <string>
++#include <cstdlib>
++#include <sstream>
++#include <fstream>
+ 
+ #include "GPTSoVITS/GPTSoVITS.h"
+ #include "GPTSoVITS/InferencePipeline.h"
+ 
+ #ifdef _HOST_WINDOWS_
+-#define MODEL_PATH R"(F:\Engcode\AIAssistant\GPT-SoVITS-Devel\GPT-SoVITS_minimal_inference\onnx_export\firefly_v2_proplus_fp16)"
++#define MODEL_PATH R"(A:/Downloads/sovit-my/tmpscripts/onnx_export/v2proplus)"
+ #else
+ #define MODEL_PATH R"(/Users/huiyi/code/python/GPT-SoVITS_minimal_inference/onnx_export/firefly_v2_proplus_fp16)"
+ #endif
+ #ifdef _HOST_WINDOWS_
+-auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCUDA, 0);
++auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCPU, 0);
+ #else
+ auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCPU, 0);
+ #endif
+@@ -46,6 +49,19 @@
+     if (argc >= 4) ref_text = argv[3];
+     if (argc >= 5) ref_lang = argv[4];
+     if (argc >= 6) output_path = argv[5];
++    // [本地补丁] Windows 下 MinGW 的 argv 按 ANSI 解码，中文会变成非 UTF-8；
++    // 用 GSV_REF_TEXT_FILE 指向 UTF-8 文本文件来绕过。
++    if (const char* tf = std::getenv("GSV_REF_TEXT_FILE")) {
++      std::ifstream ifs(tf, std::ios::binary);
++      if (ifs) {
++        std::stringstream ss;
++        ss << ifs.rdbuf();
++        ref_text = ss.str();
++        while (!ref_text.empty() && (ref_text.back() == '\n' || ref_text.back() == '\r' || ref_text.back() == ' '))
++          ref_text.pop_back();
++        if (ref_text.rfind("\xEF\xBB\xBF", 0) == 0) ref_text.erase(0, 3);
++      }
++    }
+ 
+     std::cout << "\n配置信息:" << std::endl;
+     std::cout << "  说话人名称: " << speaker_name << std::endl;
+--- a/example/onnx/edge_inference.cpp
++++ b/example/onnx/edge_inference.cpp
+@@ -9,6 +9,9 @@
+ #include <iostream>
+ #include <stdexcept>
+ #include <string>
++#include <cstdlib>
++#include <sstream>
++#include <fstream>
+ 
+ #include "GPTSoVITS/AudioTools.h"
+ #include "GPTSoVITS/GPTSoVITS.h"
+@@ -22,14 +25,14 @@
+ #endif
+ 
+ #ifdef HOST_WINDOWS
+-auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCUDA, 0);
++auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCPU, 0);
+ #else
+ auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCPU, 0);
+ #endif
+ 
+ #ifdef HOST_WINDOWS
+ #define MODEL_PATH \
+-  R"(F:\Engcode\AIAssistant\GPT-SoVITS-Devel\GPT-SoVITS_minimal_inference\onnx_export\firefly_v2_proplus_fp16)"
++  R"(A:/Downloads/sovit-my/tmpscripts/onnx_export/v2proplus)"
+ #else
+ #define MODEL_PATH \
+   R"(/Users/huiyi/code/python/GPT-SoVITS_minimal_inference/onnx_export/firefly_v2_proplus_fp16)"
+@@ -60,6 +63,18 @@
+   std::string text_lang    = argc >= 4 ? argv[3] : "zh";
+   std::string speaker_name = argc >= 5 ? argv[4] : "firefly";
+   std::string output_path  = argc >= 6 ? argv[5] : "edge_output.wav";
++  // [本地补丁] 中文文本走 UTF-8 文件，避开 Windows 窄字符 argv 的 ANSI 解码
++  if (const char* tf = std::getenv("GSV_TEXT_FILE")) {
++    std::ifstream ifs(tf, std::ios::binary);
++    if (ifs) {
++      std::stringstream ss;
++      ss << ifs.rdbuf();
++      text = ss.str();
++      while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' '))
++        text.pop_back();
++      if (text.rfind("\xEF\xBB\xBF", 0) == 0) text.erase(0, 3);
++    }
++  }
+ 
+   // try {
+   CPPTRACE_TRY {
+@@ -96,7 +111,7 @@
+     std::cout << "  文本:         " << text.substr(0, 40) << "...\n";
+     std::cout << "  语言:         " << text_lang << "\n";
+     std::cout << "  设备:         "
+-              << (device.type == GPTSoVITS::Model::DeviceType::kCUDA ? "CUDA" : "CPU") << "\n\n";
++              << (device.type == GPTSoVITS::Model::DeviceType::kCPU ? "CUDA" : "CPU") << "\n\n";
+ 
+     auto t_start = std::chrono::steady_clock::now();
+     GPTSoVITS::Model::InferStats stats;
+--- a/example/onnx/streaming_inference.cpp
++++ b/example/onnx/streaming_inference.cpp
+@@ -11,6 +11,7 @@
+ #include <memory>
+ #include <sstream>
+ #include <string>
++#include <cstdlib>
+ #include <vector>
+ 
+ #include "GPTSoVITS/AudioTools.h"
+@@ -26,14 +27,14 @@
+ #endif
+ 
+ #ifdef HOST_WINDOWS
+-auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCUDA, 0);
++auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCPU, 0);
+ #else
+ auto device = GPTSoVITS::Model::Device(GPTSoVITS::Model::DeviceType::kCPU, 0);
+ #endif
+ 
+ #ifdef HOST_WINDOWS
+ #define MODEL_PATH \
+-  R"(F:\Engcode\AIAssistant\GPT-SoVITS-Devel\GPT-SoVITS_minimal_inference\onnx_export\firefly_v2_proplus_fp16)"
++  R"(A:/Downloads/sovit-my/tmpscripts/onnx_export/v2proplus)"
+ #else
+ #define MODEL_PATH \
+   R"(/Users/huiyi/code/python/GPT-SoVITS_minimal_inference/onnx_export/firefly_v2_proplus_fp16)"
+@@ -78,12 +79,8 @@
+ #endif
+ 
+   std::string speaker_package = "firefly.gsppkg";
+-  std::string text = (
+-    "皆さん、我在インターネット上看到someone把几国language混在一起speak。\n"
+-    "虽然是混乱している句子ですけど、中文日本語プラスEnglish、挑戦スタート！\n"
+-    "我study日本語的时候，もし有汉字，我会很happy。\n"
+-    "2021年6月25日,今天32°C。以上です，byebye！"
+-  );
++  // [本地补丁] 默认文本改为本机测试句（源码是 UTF-8，绕开 argv 的 ANSI 解码）
++  std::string text = "你好，这是一个语音合成测试。";
+   std::string text_lang    = "zh";
+   std::string speaker_name = "firefly";
+   std::string output_path  = "streaming_output.wav";
+@@ -182,7 +179,7 @@
+     std::cout << "  文本:     " << text.substr(0, 40) << "...\n";
+     std::cout << "  语言:     " << text_lang << "\n";
+     std::cout << "  设备:     "
+-              << (device.type == GPTSoVITS::Model::DeviceType::kCUDA ? "CUDA" : "CPU") << "\n";
++              << (device.type == GPTSoVITS::Model::DeviceType::kCPU ? "CUDA" : "CPU") << "\n";
+     std::cout << "  采样参数: temperature=" << temperature
+               << ", top_k=" << top_k << ", top_p=" << top_p << "\n";
+     std::cout << "  流参数:   chunk_length=" << chunk_length
+--- a/cmake/boost-cmake.cmake
++++ b/cmake/boost-cmake.cmake
+@@ -1,46 +1,17 @@
+ include_guard(GLOBAL)
+ include(${CMAKE_CURRENT_LIST_DIR}/base.cmake)
+ 
+-# Boost-cmake 配置
+-set(Boost_USE_STATIC_LIBS ON)
+-set(Boost_USE_STATIC_RUNTIME ON)
+-if(APPLE)
+-    add_definitions(-DAT_NO_AUTOMOUNT=0)
+-endif()
+-
+-# 根据用户变量配置 Boost 组件
+-if(CPPMODULE_BOOSTCMAKE_ENABLE_ALL)
+-    set(USE_BOOST_SERIALIZATION ON)
+-    set(USE_BOOST_FIBER ON)
+-    set(USE_BOOST_LOCALE ON)
+-endif()
+-
+-if(NOT TARGET boost-cmake)
+-    cppmodule_add_subdirectory(boost-cmake "${CPPMODULE_ROOTPATH}/boost-cmake")
++# [本地补丁] 上游用 boost-cmake 编译整套 boost（Windows 下还 ENABLE_LANGUAGE(ASM_MASM)，
++# 没有 MSVC 就生成失败）。本仓库实际只 include 了 boost/algorithm/string.hpp（纯头文件），
++# 因此改为 header-only INTERFACE target，跳过编译。
++if(NOT TARGET cppmodule_boost_headers)
++    add_library(cppmodule_boost_headers INTERFACE)
++    file(GLOB _BOOST_INC_DIRS "${CPPMODULE_ROOTPATH}/boost-cmake/libs/*/include")
++    target_include_directories(cppmodule_boost_headers INTERFACE
++        "${CPPMODULE_ROOTPATH}/boost-cmake"
++        ${_BOOST_INC_DIRS})
+ endif()
+ 
+ if(NOT TARGET cppmodule::boost)
+-    add_library(cppmodule::boost INTERFACE IMPORTED GLOBAL)
+-    
+-    # 定义基础依赖
+-    set(_BOOST_LIBS 
+-        Boost::boost Boost::system Boost::atomic Boost::thread 
+-        Boost::context Boost::coroutine Boost::chrono Boost::filesystem 
+-        Boost::date_time Boost::regex Boost::timer Boost::exception 
+-        Boost::random Boost::program_options Boost::asio Boost::beast
+-    )
+-    
+-    # 动态添加组件
+-    if(USE_BOOST_SERIALIZATION)
+-        list(APPEND _BOOST_LIBS Boost::serialization)
+-    endif()
+-    if(USE_BOOST_FIBER)
+-        list(APPEND _BOOST_LIBS Boost::fiber)
+-    endif()
+-    if(USE_BOOST_LOCALE)
+-        list(APPEND _BOOST_LIBS Boost::locale)
+-    endif()
+-
+-    target_link_libraries(cppmodule::boost INTERFACE ${_BOOST_LIBS})
+-    target_include_directories(cppmodule::boost INTERFACE "${CPPMODULE_ROOTPATH}/boost-cmake")
++    add_library(cppmodule::boost ALIAS cppmodule_boost_headers)
+ endif()
+--- a/third_party/tokenizers-cpp/CMakeLists.txt
++++ b/third_party/tokenizers-cpp/CMakeLists.txt
+@@ -75,10 +75,19 @@
+     CXX_${TOKENIZERS_CPP_CARGO_TARGET}=${ANDROID_TOOLCHAIN_ROOT}/bin/${TOKENIZERS_CPP_CARGO_TARGET}${ANDROID_NATIVE_API_LEVEL}-clang++
+   )
+ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
++  # [本地补丁] 没有 MSVC 时（MinGW/UCRT64）用 gnu 目标，否则 rustc 找不到 std
+   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+-    set(TOKENIZERS_CPP_CARGO_TARGET aarch64-pc-windows-msvc)
++    if (MSVC)
++      set(TOKENIZERS_CPP_CARGO_TARGET aarch64-pc-windows-msvc)
++    else()
++      set(TOKENIZERS_CPP_CARGO_TARGET aarch64-pc-windows-gnullvm)
++    endif()
+   else()
+-    set(TOKENIZERS_CPP_CARGO_TARGET x86_64-pc-windows-msvc)
++    if (MSVC)
++      set(TOKENIZERS_CPP_CARGO_TARGET x86_64-pc-windows-msvc)
++    else()
++      set(TOKENIZERS_CPP_CARGO_TARGET x86_64-pc-windows-gnu)
++    endif()
+   endif()
+ endif()
+ 
+--- a/third_party/tokenizers-cpp/sentencepiece/src/sentencepiece_processor.h
++++ b/third_party/tokenizers-cpp/sentencepiece/src/sentencepiece_processor.h
+@@ -17,6 +17,7 @@
+ 
+ #include <cstring>
+ #include <memory>
++#include <cstdint>
+ #include <string>
+ #include <string_view>
+ #include <utility>
+--- a/third_party/tokenizers-cpp/include/tokenizers_cpp.h
++++ b/third_party/tokenizers-cpp/include/tokenizers_cpp.h
+@@ -7,6 +7,7 @@
+ #define TOKENIZERS_CPP_H_
+ 
+ #include <memory>
++#include <cstdint>
+ #include <string>
+ #include <vector>
+ 
+--- a/third_party/cld2-cmake/public/CLD2/compact_lang_det.h
++++ b/third_party/cld2-cmake/public/CLD2/compact_lang_det.h
+@@ -59,6 +59,7 @@
+ //   in Arabic or Cyrillic scripts, nor TAJIK in Arabic script.
+ //
+ 
++#include <cstdio>
+ #ifndef I18N_ENCODINGS_CLD2_PUBLIC_COMPACT_LANG_DET_H_
+ #define I18N_ENCODINGS_CLD2_PUBLIC_COMPACT_LANG_DET_H_
+ 
